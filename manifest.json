@@ -1,12 +1,12 @@
 {
   "name": "dizidad",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "scrapers": [
     {
       "id": "dizidad",
       "name": "DiziDAD",
       "description": "dizidad.com Türkçe dublaj ve altyazılı dizi / film",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "author": "custom",
       "supportedTypes": ["movie", "tv"],
       "filename": "providers/dizidad.js",

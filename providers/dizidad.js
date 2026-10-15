@@ -1,4 +1,4 @@
-// dizidad - Nuvio provider (dizidad.com)  v1.0.1
+// dizidad - Nuvio provider (dizidad.com)  v1.0.0
 // Dizi + Film | Turkce Dublaj / Altyazili | hdplayersystem.com player cozumleme
 // DEBUG_MODU true iken kaynak cikmazsa hata kartlari gosterilir.
 

@@ -1,4 +1,4 @@
-// dizidad - Nuvio provider (dizidad.com)  v1.0.0
+// dizidad - Nuvio provider (dizidad.com)  v1.0.2
 // Dizi + Film | Turkce Dublaj / Altyazili | hdplayersystem.com player cozumleme
 // DEBUG_MODU true iken kaynak cikmazsa hata kartlari gosterilir.
 
@@ -145,7 +145,13 @@ function resolveHdPlayer(embedUrl, referer) {
   var origin = (embedUrl.match(/^https?:\/\/[^\/]+/) || [''])[0];
   var hdrs = { Referer: referer, Origin: 'https://www.dizidad.com' };
   return http(embedUrl, { headers: hdrs }).then(function (html) {
-    dbg('embed len=' + html.length);
+    dbg('embed ' + embedUrl.slice(0, 60) + ' len=' + html.length);
+    var keys = /m3\/|atob|fetch\(|ajax|XMLHttpRequest|sources?\s*[:=]|file\s*:|\.m3u8|\.mp4|eval\(|decrypt|AES|CryptoJS|token|player/i;
+    var cnt = 0;
+    html.split(/[\r\n;]+/).forEach(function (ln) {
+      ln = ln.trim();
+      if (cnt < 10 && ln.length > 8 && keys.test(ln)) { cnt++; dbg('SATIR: ' + ln.slice(0, 120)); }
+    });
     var media = findMedia(html);
     if (media.length) return { media: media, subs: findSubs(html), referer: embedUrl };
 
@@ -207,7 +213,14 @@ function buildStreams(res, label, pageUrl) {
 }
 
 function debugCard(msg) {
-  return { name: 'dizidad DEBUG', title: msg.slice(0, 200), url: 'https://example.com/debug.mp4', quality: 'Auto', provider: 'dizidad' };
+  return { name: String(msg).slice(0, 140), title: String(msg).slice(0, 300), url: 'https://example.com/debug.mp4', quality: 'DEBUG', provider: 'dizidad' };
+}
+
+function debugCards(prefix) {
+  var cards = [];
+  if (prefix) cards.push(debugCard(prefix));
+  debugLog.slice(0, 25).forEach(function (l, i) { cards.push(debugCard((i + 1) + '. ' + l)); });
+  return cards;
 }
 
 // ---------- ANA FONKSIYON ----------
@@ -284,10 +297,10 @@ function getStreams(tmdbId, mediaType, season, episode) {
     });
     return chain.then(function () { return streams; });
   }).then(function (streams) {
-    if (!streams.length && DEBUG_MODU) return [debugCard('kaynak cikmadi | ' + debugLog.join(' | '))];
+    if (!streams.length && DEBUG_MODU) return debugCards('kaynak cikmadi');
     return streams;
   }).catch(function (e) {
-    return DEBUG_MODU ? [debugCard('HATA: ' + e.message + ' | ' + debugLog.join(' | '))] : [];
+    return DEBUG_MODU ? debugCards('HATA: ' + e.message) : [];
   });
 }
 

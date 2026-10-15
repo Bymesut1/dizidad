@@ -1,4 +1,4 @@
-// dizidad - Nuvio provider (dizidad.com)  v1.0.3
+// dizidad - Nuvio provider (dizidad.com)  v1.0.4
 // Dizi + Film | Turkce Dublaj / Altyazili | hdplayersystem.com player cozumleme
 // DEBUG_MODU true iken kaynak cikmazsa hata kartlari gosterilir.
 
@@ -9,6 +9,7 @@ var UA = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, li
 
 var debugLog = [];
 function dbg(m) { debugLog.push(String(m)); }
+function pad(n) { return n < 10 ? '0' + n : '' + n; }
 
 function norm(s) {
   return String(s || '').toLowerCase()
@@ -140,52 +141,99 @@ function b64(s) {
   try { return atob(s); } catch (e) { return ''; }
 }
 
-// hdplayersystem embed -> stream
+// hdplayersystem (FirePlayer) embed -> stream
+function unesc(u) { return String(u || '').replace(/\\\//g, '/').replace(/\\u0026/g, '&').replace(/&amp;/g, '&'); }
+
+function postGetVideo(origin, id, embedUrl, r) {
+  var url = origin + '/player/index.php?data=' + encodeURIComponent(id) + '&do=getVideo';
+  return http(url, {
+    method: 'POST',
+    headers: {
+      'Referer': embedUrl,
+      'Origin': origin,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+      'Accept': 'application/json, text/javascript, */*; q=0.01'
+    },
+    body: 'hash=' + encodeURIComponent(id) + '&r=' + encodeURIComponent(r || '')
+  }).then(function (t) {
+    dbg('getVideo yanit: ' + t.slice(0, 110).replace(/\s+/g, ' '));
+    var vs = null, sec = null;
+    try {
+      var j = JSON.parse(t);
+      vs = j.videoSource || j.video_source || null;
+      sec = j.securedLink || j.secured_link || null;
+    } catch (e) {
+      var a = t.match(/"videoSource"\s*:\s*"([^"]+)"/);
+      var b = t.match(/"securedLink"\s*:\s*"([^"]+)"/);
+      vs = a ? a[1] : null; sec = b ? b[1] : null;
+    }
+    var out = [];
+    [vs, sec].forEach(function (x) {
+      x = unesc(x);
+      if (x && /^https?:/i.test(x) && out.indexOf(x) === -1) out.push(x);
+    });
+    return { links: out, raw: t };
+  });
+}
+
+// playlisti hangi Referer ile aciliyor kontrol et
+function checkPlaylist(u, refs) {
+  var i = 0;
+  function next() {
+    if (i >= refs.length) return Promise.resolve(null);
+    var ref = refs[i++];
+    return http(u, { headers: { Referer: ref, Origin: (ref.match(/^https?:\/\/[^\/]+/) || [''])[0] } })
+      .then(function (t) {
+        var head = t.trim().slice(0, 60).replace(/\s+/g, ' ');
+        dbg('playlist(' + ref.slice(0, 40) + ') -> ' + head);
+        if (/^#EXTM3U/.test(t.trim())) return ref;
+        return next();
+      }).catch(function () { return next(); });
+  }
+  return next();
+}
+
 function resolveHdPlayer(embedUrl, referer) {
   var origin = (embedUrl.match(/^https?:\/\/[^\/]+/) || [''])[0];
+  var id = embedUrl.split('?')[0].split('#')[0].replace(/\/+$/, '').split('/').pop();
   var hdrs = { Referer: referer, Origin: 'https://www.dizidad.com' };
+
   return http(embedUrl, { headers: hdrs }).then(function (html) {
-    dbg('embed ' + embedUrl.slice(0, 60) + ' len=' + html.length);
-    var keys = /m3\/|atob|fetch\(|ajax|XMLHttpRequest|sources?\s*[:=]|file\s*:|\.m3u8|\.mp4|eval\(|decrypt|AES|CryptoJS|token|player/i;
-    var cnt = 0;
-    html.split(/[\r\n;]+/).forEach(function (ln) {
-      ln = ln.trim();
-      if (cnt < 10 && ln.length > 8 && keys.test(ln)) { cnt++; dbg('SATIR: ' + ln.slice(0, 120)); }
-    });
-    var media = findMedia(html);
-    if (media.length) return { media: media, subs: findSubs(html), referer: embedUrl };
+    dbg('embed id=' + id + ' len=' + html.length);
 
-    // /m3/<token> adresi (sayfa icinde veya JS'de)
-    var tokens = [], m;
-    var re = /(?:https?:\/\/[^"'\s]+)?\/m3\/([A-Za-z0-9+\/=_-]{40,})/g;
-    while ((m = re.exec(html))) tokens.push(m[0].indexOf('http') === 0 ? m[0] : origin + '/m3/' + m[1]);
+    // sayfada dogrudan medya varsa
+    var direct = findMedia(html);
+    if (direct.length) return { media: direct, subs: findSubs(html), referer: embedUrl };
 
-    // embed id -> bazen dogrudan m3 uretilir; player_id vb.
-    var tasks = tokens.map(function (u) {
-      return http(u, { headers: { Referer: embedUrl, Origin: origin, 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(function (t) {
-          if (/security error/i.test(t)) { dbg('m3: security error'); return null; }
-          var mm = findMedia(t);
-          if (!mm.length) { var d = b64(t.trim()); if (d) mm = findMedia(d); }
-          return mm.length ? { media: mm, subs: findSubs(t), referer: embedUrl } : null;
-        }).catch(function () { return null; });
-    });
+    var base = (html.match(/player_base_url\s*=\s*["']([^"']+)["']/) || [])[1] || origin;
+    var subs = findSubs(html);
 
-    // packed / base64 icerik tara
-    var atobs = html.match(/atob\(["']([A-Za-z0-9+\/=]{40,})["']\)/g) || [];
-    atobs.forEach(function (a) {
-      var d = b64(a.replace(/atob\(["']|["']\)/g, ''));
-      var mm = findMedia(d);
-      if (mm.length) tasks.push(Promise.resolve({ media: mm, subs: findSubs(d), referer: embedUrl }));
-    });
+    function attempt(r) {
+      return postGetVideo(base, id, embedUrl, r).then(function (res) {
+        if (!res.links.length) return null;
+        var link = res.links[0];
+        dbg('videoSource: ' + link.slice(0, 90));
+        return checkPlaylist(link, [embedUrl, base + '/', referer]).then(function (okRef) {
+          var useRef = okRef || embedUrl;
+          if (!okRef) dbg('playlist dogrulanamadi, yine de deneniyor');
+          return { media: res.links, subs: subs, referer: useRef };
+        });
+      });
+    }
 
-    return Promise.all(tasks).then(function (rs) {
-      for (var i = 0; i < rs.length; i++) if (rs[i]) return rs[i];
-      // son care: embed sayfasindaki /m3/ yolunu id ile dene
-      var id = embedUrl.split('/').pop();
-      var f = html.match(/["']([^"']*\/(?:source|sources|player|api)[^"']*)["']/);
-      if (f) dbg('olasi api: ' + f[1].slice(0, 80));
-      dbg('embed id=' + id + ' stream cikmadi');
+    return attempt(referer).then(function (r1) {
+      if (r1) return r1;
+      return attempt('');
+    }).then(function (r2) {
+      if (r2) return r2;
+      // basarisiz: sayfadaki ipuclarini debug'a yaz
+      var keys = /m3\/|atob|fetch\(|ajax|XMLHttpRequest|sources?\s*[:=]|file\s*:|getVideo|decrypt|AES|CryptoJS|token/i;
+      var cnt = 0;
+      html.split(/[\r\n;]+/).forEach(function (ln) {
+        ln = ln.trim();
+        if (cnt < 8 && ln.length > 8 && keys.test(ln)) { cnt++; dbg('SATIR: ' + ln.slice(0, 120)); }
+      });
       return null;
     });
   });
@@ -219,7 +267,7 @@ function debugCard(msg) {
 function debugCards(prefix) {
   var cards = [];
   if (prefix) cards.push(debugCard(prefix));
-  debugLog.slice(0, 25).forEach(function (l, i) { cards.push(debugCard((i + 1) + '. ' + l)); });
+  debugLog.slice(0, 25).forEach(function (l, i) { cards.push(debugCard(pad(i + 1) + '. ' + l)); });
   return cards;
 }
 

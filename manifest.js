@@ -1,18 +1,21 @@
 {
   "name": "dizidad",
-  "id": "dizidad",
   "version": "1.0.1",
-  "description": "dizidad.com - Dizi ve Film (Türkçe Dublaj / Altyazılı)",
-  "author": "Mesut",
   "scrapers": [
     {
       "id": "dizidad",
-      "name": "dizidad",
-      "description": "dizidad.com Türkçe dublaj ve altyazılı dizi/film",
-      "version": "1.0.0",
-      "filename": "dizidad.js",
+      "name": "DiziDAD",
+      "description": "dizidad.com Türkçe dublaj ve altyazılı dizi / film",
+      "version": "1.0.1",
+      "author": "custom",
       "supportedTypes": ["movie", "tv"],
-      "enabled": true
+      "filename": "providers/dizidad.js",
+      "enabled": true,
+      "hasSettings": false,
+      "formats": ["mp4", "m3u8"],
+      "contentLanguage": ["tr"],
+      "limited": false,
+      "disabledPlatforms": []
     }
   ]
 }
